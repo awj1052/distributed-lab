@@ -40,11 +40,11 @@ flowchart LR
         MQ[["Kafka\n(Commit Log / Consumer Group)"]]
     end
 
-    Runner -->|HTTP 부하 전송| App
-    Runner -->|폴링 & 검증| Metrics
-    Runner -->|결과 기록| Report
-    App -->|HikariCP (Max 10)| DB
-    App <-->|Produce / Consume| MQ
+    Runner -->|"HTTP 부하 전송"| App
+    Runner -->|"폴링 & 검증"| Metrics
+    Runner -->|"결과 기록"| Report
+    App -->|"HikariCP Pool 10"| DB
+    App <-->|"Produce / Consume"| MQ
 ```
 
 ### 최소한의 디렉터리 구조
@@ -161,7 +161,7 @@ DB와 Kafka 두 곳에 데이터를 쓸 때 발생하는 **이중 쓰기(Dual-Wr
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as 부하 도구 (bench)
+    participant Client as "부하 도구 (bench)"
     participant API as 주문 접수 API
     participant Kafka as Kafka Queue
     participant StockW as 재고/주문 Worker
