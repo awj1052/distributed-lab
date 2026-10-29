@@ -1,201 +1,202 @@
-# 분산 ?�스??코드 리딩 & ?�습 가?�드 (STUDY_GUIDE.md)
+# 분산 시스템 코드 리딩 & 실습 가이드 (STUDY_GUIDE.md)
 
-??문서??[PURPOSE.md](PURPOSE.md)??4?�계 질문?�을 **?�리 ?�로?�트???�느 ?�일, �?번째 �?코드?�서 ?�인?�야 ?�는지**, 그리�?**직접 코드�??�떻�?고쳐보며(망�??�려보며) ??것으�?만들 ???�는지** ?�리???�습 가?�드?�니??
+이 문서는 [PURPOSE.md](PURPOSE.md)의 4단계 질문들을 **우리 프로젝트의 어느 파일, 몇 번째 줄 코드에서 확인해야 하는지**, 그리고 **직접 코드를 어떻게 고쳐보며(망가뜨려보며) 내 것으로 만들 수 있는지** 정리한 학습 가이드입니다.
 
 > [!TIP]
-> **가???�과?�인 공�? ?�서 (?�계??15�?**
-> 1. ?�래 ?�내??**?�심 코드 ?�일 링크�??�릭**????30~50줄만 ?�습?�다.
-> 2. **?��???명령??*�?복사???�행?�고, 콘솔/DB 결과�??�으�??�인?�니??
-> 3. �??�계 마�?막에 ?�는 **[직접 ?�보�?미션]**?��?코드�?1~2�??�정?�서 결과가 ?�떻�?바뀌는지 ?�인?�니??
+> **가장 효과적인 공부 순서 (단계당 15분)**
+> 1. 아래 안내된 **핵심 코드 파일 링크를 클릭**해 딱 30~50줄만 읽습니다.
+> 2. **터미널 명령어**를 복사해 실행하고, 콘솔/DB 결과를 눈으로 확인합니다.
+> 3. 각 단계 마지막에 있는 **[직접 해보기 미션]**대로 코드를 1~2줄 수정해서 결과가 어떻게 바뀌는지 확인합니다.
 
 ---
 
-## 0. ?�습 ?�경 켜기 (처음 ??번만)
+## 0. 실습 환경 켜기 (처음 한 번만)
 
-?��???2개�? ?�워?�고 ?�작?�면 가???�합?�다.
+터미널 2개를 띄워두고 시작하면 가장 편합니다.
 
-- **?��???1 (?�프??& ?�버 ?�행)**:
+- **터미널 1 (인프라 & 서버 실행)**:
   ```powershell
   docker compose up -d
   gradle :server:bootRun
   ```
-- **?��???2 (부???�행 & 검�?명령???�력??**:
+- **터미널 2 (부하 실행 & 검증 명령어 입력용)**:
   ```powershell
-  # ?�버가 ?�아?�는지 ?�인
+  # 서버가 살아있는지 확인
   Invoke-RestMethod -Uri "http://localhost:8080/admin/metrics"
   ```
 
 ---
 
-## 1?�계: RDBMS??"물리???�계"�?명확??체감?�기
+## 1단계: RDBMS의 "물리적 한계"를 명확히 체감하기
 
-> **PURPOSE.md???�심 질문**:  
-> *"?�일 RDBMS?�서 `@Transactional`�?모든 것을 ?�결?�던 방식???�디??깨�??��??"*
+> **PURPOSE.md의 핵심 질문**:  
+> *"단일 RDBMS에서 `@Transactional`로 모든 것을 해결하던 방식이 어디서 깨지는가?"*
 
-### ??먼�? 봐야 ???�정 ?�일
-- [application.yml](server/src/main/resources/application.yml#L10-L14)
-  - `maximum-pool-size: 10`: ?�버가 DB?� ?�시??맺을 ???�는 ?�결(커넥??????**10�?*�??�한?�습?�다.
-  - `connection-timeout: 1000`: 커넥??10개�? ???�이�??�을 ?? 11번째 ?�청?� **1�?1,000ms)** ?�안 기다리다 ?�리가 ???�면 ?�러(`SQLTransientConnectionException`)�??��?�?죽습?�다.
+### ① 먼저 봐야 할 설정 파일
+- [server/src/main/resources/application.yml](server/src/main/resources/application.yml)
+  - `maximum-pool-size: 10`: 서버가 DB와 동시에 맺을 수 있는 연결(커넥션)을 딱 **10개**로 제한했습니다.
+  - `connection-timeout: 1000`: 커넥션 10개가 다 쓰이고 있을 때, 11번째 요청은 **1초(1,000ms)** 동안 기다리다 자리가 안 나면 에러(`SQLTransientConnectionException`)를 던지고 죽습니다.
 
-### ??코드 리딩 ?�인?? [Step1OrderService.java](server/src/main/java/lab/step1_rdbms/Step1OrderService.java)
+### ② 코드 리딩 포인트: [server/src/main/java/lab/step1_rdbms/Step1OrderService.java](server/src/main/java/lab/step1_rdbms/Step1OrderService.java)
 
-1. **비�?????`SELECT ... FOR UPDATE`)??걸리??지??*
-   - [ProductRepository.java](server/src/main/java/lab/step1_rdbms/ProductRepository.java#L16-L19)??`@Lock(LockModeType.PESSIMISTIC_WRITE)`�?보세??
-   - [`orderWithHotLock()`](server/src/main/java/lab/step1_rdbms/Step1OrderService.java#L24-L53)가 ?�출?�면, 1�??�품 ??Row)???�물?��? 채웁?�다. ?�랜??��???�날(`return`?? ?�까지 ?�른 ?�레?�들?� 1�??�품??건드리�? 못하�?줄을 ??��??
+1. **비관적 락(`SELECT ... FOR UPDATE`)이 걸리는 지점**
+   - [ProductRepository.java](server/src/main/java/lab/step1_rdbms/ProductRepository.java)의 `@Lock(LockModeType.PESSIMISTIC_WRITE)`를 보세요.
+   - `orderWithHotLock()`가 호출되면, 1번 상품 행(Row)에 자물쇠를 채웁니다. 트랜잭션이 끝날(`return`될) 때까지 다른 스레드들은 1번 상품을 건드리지 못하고 줄을 섭니다.
 
-2. **?�랜??�� ?��? ?��? API ?�출 참사 (가??중요!)**
-   - [`orderWithExternalDelay()`](server/src/main/java/lab/step1_rdbms/Step1OrderService.java#L60-L89)�?보세??
-   - 83번째 줄의 `Thread.sleep(300)`?� 카드??결제??카카?�톡 ?�림 발송??걸리??**0.3초의 ?�트?�크 ?��??�간**???�합?�다.
-   - **???�버가 죽을까요?**: 메서???�에 `@Transactional`??붙어 ?�기 ?�문?? **DB ?�업?� 0.001�?만에 ?�났?�데??0.3�??�안 DB 커넥?�을 ???�려주고 쥐고 ?�습?�다.**
-   - 커넥?�이 10개뿐?�니 1초에 최�? ??30�?`10�?/ 0.3�?)밖에 �?처리?�니?? 50명이 ?�시??몰리�??�선 30명만 처리?�는 ?�안 ?�의 20명�? 1�??�?�아?�에 걸려 ?�멸?�니??
+2. **트랜잭션 내부 외부 API 호출 참사 (가장 중요!)**
+   - `orderWithExternalDelay()`를 보세요.
+   - `Thread.sleep(300)`은 카드사 결제나 카카오톡 알림 발송에 걸리는 **0.3초의 네트워크 대기 시간**을 뜻합니다.
+   - **왜 서버가 죽을까요?**: 메서드 위에 `@Transactional`이 붙어 있기 때문에, **DB 작업은 0.001초 만에 끝났는데도 0.3초 동안 DB 커넥션을 안 돌려주고 쥐고 있습니다.**
+   - 커넥션이 10개뿐이니 1초에 최대 약 30건(`10개 / 0.3초`)밖에 못 처리합니다. 50명이 동시에 몰리면 앞선 30명만 처리되는 동안 뒤의 20명은 1초 타임아웃에 걸려 전멸합니다!
 
-3. **교차 ???�드??Deadlock) 발생�??�결**
-   - **?�드??발생 코드**: [`orderWithDeadlock()`](server/src/main/java/lab/step1_rdbms/Step1OrderService.java#L96-L132)
-     - 102번째 줄에??50% ?�률�??�떤 ?�레?�는 `1�??�품 -> 2�??�품` ?�서�? ?�른 ?�레?�는 `2�??�품 -> 1�??�품` ?�서�??�을 ?�습?�다.
-     - ?�레??A가 1번을 쥐고 2번을 기다리는 ?�시?? ?�레??B가 2번을 쥐고 1번을 기다리면 ?�원?????�리는 **?�드??SQLState `40P01`)**???�집?�다.
-   - **?�드???�결 코드**: [`orderWithDeadlockFixed()`](server/src/main/java/lab/step1_rdbms/Step1OrderService.java#L139-L172)
-     - 144~145번째 �?`Math.min`, `Math.max`)??보세?? **?�떤 ?�청???�든 무조�??��? 번호(1�?부???�을 ?�도�??�서�??�일**?�습?�다. ????�?바꿨??뿐인???�드?�이 0건이 ?�니??
+3. **교차 락 데드락(Deadlock) 발생과 해결**
+   - **데드락 발생 코드**: `orderWithDeadlock()`
+     - 50% 확률로 어떤 스레드는 `1번 상품 -> 2번 상품` 순서로, 다른 스레드는 `2번 상품 -> 1번 상품` 순서로 락을 잡습니다.
+     - 스레드 A가 1번을 쥐고 2번을 기다리는 동시에, 스레드 B가 2번을 쥐고 1번을 기다리면 영원히 안 풀리는 **데드락(SQLState `40P01`)**이 터집니다.
+   - **데드락 해결 코드**: `orderWithDeadlockFixed()`
+     - `Math.min`, `Math.max`를 보세요. **어떤 요청이 오든 무조건 작은 번호(1번)부터 락을 잡도록 순서를 통일**했습니다. 단 두 줄 바꿨을 뿐인데 데드락이 0건이 됩니다.
 
-### ???�행?�서 ?�으�??�인?�기
+### ③ 실행해서 눈으로 확인하기
 ```powershell
-# 1-B. ?��? API 지?�으�?커넥???� 고갈?�키�?(?�?�아???�??발생 ?�인)
+# 1-B. 외부 API 지연으로 커넥션 풀 고갈시키기 (타임아웃 대량 발생 확인)
 node bench/bench.mjs --scenario step1-delay --concurrency 50 --requests 150
 
-# 1-C vs 1-D. ?�드??발생(50�? vs ?�드???�결(0�? 비교?�기
+# 1-C vs 1-D. 데드락 발생(50건) vs 데드락 해결(0건) 비교하기
 node bench/bench.mjs --scenario step1-deadlock --concurrency 20 --requests 100
 node bench/bench.mjs --scenario step1-deadlock-fixed --concurrency 20 --requests 100
 ```
 
-### ?�� [1?�계 직접 ?�보�?미션]
-- [Step1OrderService.java](server/src/main/java/lab/step1_rdbms/Step1OrderService.java#L83)??`Thread.sleep(300)`??`@Transactional` 메서??�??? [`Step1OrderController.java`](server/src/main/java/lab/step1_rdbms/Step1OrderController.java#L34)?�서 ?�비???�출 직후)?�로 ??���??�?�아??건수가 ?�떻�?바뀔까??  
-  *(?�트: DB 커넥?�을 반납???�에 300ms�??�게 ?��?�?커넥???� ?�?�아?�이 마법처럼 ?�라집니??)*
+### 🧪 [1단계 직접 해보기 미션]
+- [Step1OrderService.java](server/src/main/java/lab/step1_rdbms/Step1OrderService.java)의 `Thread.sleep(300)`을 `@Transactional` 메서드 밖(예: [Step1OrderController.java](server/src/main/java/lab/step1_rdbms/Step1OrderController.java)에서 서비스 호출 직후)으로 옮기면 타임아웃 건수가 어떻게 바뀔까요?  
+  *(힌트: DB 커넥션을 반납한 뒤에 300ms를 쉬게 되므로 커넥션 풀 타임아웃이 마법처럼 사라집니다!)*
 
 ---
 
-## 2?�계: "비동�?분리"?� 메시지 ??(Kafka)
+## 2단계: "비동기 분리"와 메시지 큐 (Kafka)
 
-> **PURPOSE.md???�심 질문**:  
-> *"지�??�장 ?�야 ???�과 ?�중???�도 ?�는 ?�을 ?�떻�??�누?��?? 같�? 메시지가 2�?처리?�면 결제가 2�??�나(멱등???"*
+> **PURPOSE.md의 핵심 질문**:  
+> *"지금 당장 해야 할 일과 나중에 해도 되는 일을 어떻게 나누는가? 같은 메시지가 2번 처리되면 결제가 2번 되나(멱등성)?"*
 
-### ??코드 리딩 ?�인?? `lab.step2_async` ?�키지
+### ① 코드 리딩 포인트: `lab.step2_async` 패키지
 
-1. **1?�계(`v1`)?� 2?�계(`v2`)??결정??차이 비교**
-   - **?�청 받는 �?*: [`Step2OrderService.createOrderAsync()`](server/src/main/java/lab/step2_async/Step2OrderService.java#L27-L56)
-     - ?�기?�는 DB??`PENDING` ?�태�?`INSERT`�?????�??�행?�고 바로 메서?��? ?�나??**DB 커넥?�을 0.005�?만에 반납**?�니?? 그리�?Kafka ?�픽(`order-created-v2`)??쪽�?(?�벤??�??�져?�니??
-   - **?�제 무거???�을 ?�는 �?*: [`Step2OrderConsumer.consume()`](server/src/main/java/lab/step2_async/Step2OrderConsumer.java#L36-L65)
-     - **37번째 �?`consume` 메서???�언부)???�세??보세?? `@Transactional`??붙어?��? ?�습?�다!**
-     - �? 51번째 줄에??`Thread.sleep(300)`(?��? API ?�출)???�는 ?�안 **DB 커넥?�을 ?��? ?��? ?�습?�다.**
-     - 300ms ?�기�? ?�난 ?? 57번째 �?[`updateOrderStatusToPaid()`](server/src/main/java/lab/step2_async/Step2OrderConsumer.java#L83-L90)�??�출???�만 ?�깐 커넥?�을 빌려 `PAID`�?바꾸�?즉시 반납?�니??
+1. **1단계(`v1`)와 2단계(`v2`)의 결정적 차이 비교**
+   - **요청 받는 곳**: [Step2OrderService.java](server/src/main/java/lab/step2_async/Step2OrderService.java)
+     - 여기서는 DB에 `PENDING` 상태로 `INSERT`만 딱 한 줄 실행하고 바로 메서드가 끝나서 **DB 커넥션을 0.005초 만에 반납**합니다. 그리고 Kafka 토픽(`order-created-v2`)에 쪽지(이벤트)만 던져둡니다.
+   - **실제 무거운 일을 하는 곳**: [Step2OrderConsumer.java](server/src/main/java/lab/step2_async/Step2OrderConsumer.java)
+     - **`consume` 메서드 선언부를 자세히 보세요! `@Transactional`이 붙어있지 않습니다!**
+     - 즉, `Thread.sleep(300)`(외부 API 호출)을 하는 동안 **DB 커넥션을 전혀 쓰지 않습니다.**
+     - 300ms 대기가 끝난 뒤, `updateOrderStatusToPaid()`를 호출할 때만 잠깐 커넥션을 빌려 `PAID`로 바꾸고 즉시 반납합니다.
 
-2. **멱등??Idempotency) ?�계 코드 ?�인**
-   - ?�트?�크가 불안?�하�?Kafka 메시지??**?�제???�같?� �?2�??�상 배달(At-Least-Once)**?????�습?�다.
-   - [`Step2OrderService.createDuplicateOrder()`](server/src/main/java/lab/step2_async/Step2OrderService.java#L62-L89)??84~85번째 줄을 보면 ?��????�같?� 주문 ?�벤?��? Kafka??**2�??�속 발행**?�니??
-   - ?��? 막아주는 방패가 [`Step2OrderConsumer.tryRecordProcessedMessage()`](server/src/main/java/lab/step2_async/Step2OrderConsumer.java#L70-L81)?�니??
-     - 처리?�기 ?�에 `processed_message` ?�이블에 `message_id = txId`�?`INSERT` ?�도?�니??
-     - ??번째 중복 메시지가 ?�어?�면 DB??기본??PK) 중복 ?�러(`DataIntegrityViolationException`)가 ?��?면서 `false`�?반환?�고, 42번째 줄에??`"?��? 처리??메시지?��?�?SKIP"`?�고 빠져?�갑?�다.
+2. **멱등성(Idempotency) 설계 코드 확인**
+   - 네트워크가 불안정하면 Kafka 메시지는 **언제든 똑같은 게 2번 이상 배달(At-Least-Once)**될 수 있습니다.
+   - `Step2OrderService.createDuplicateOrder()`를 보면 일부러 똑같은 주문 이벤트를 Kafka에 **2번 연속 발행**합니다.
+   - 이를 막아주는 방패가 `Step2OrderConsumer.tryRecordProcessedMessage()`입니다.
+     - 처리하기 전에 `processed_message` 테이블에 `message_id = txId`를 `INSERT` 시도합니다.
+     - 두 번째 중복 메시지가 들어오면 DB의 기본키(PK) 중복 에러(`DataIntegrityViolationException`)가 터지면서 `false`를 반환하고, `"이미 처리된 메시지이므로 SKIP"`하고 빠져나갑니다.
 
-### ???�행?�서 ?�으�??�인?�기
+### ② 실행해서 눈으로 확인하기
 ```powershell
-# 1-B?� ?�같??300ms 지?�이 ?��?�? ?�?�아??0�?& 빠른 ?�답 ?�인
+# 1-B와 똑같이 300ms 지연이 있지만, 타임아웃 0건 & 빠른 응답 확인
 node bench/bench.mjs --scenario step2-async --concurrency 50 --requests 200
 
-# 중복 메시지 발생 ??멱등??방어 ?�인
+# 중복 메시지 발생 시 멱등성 방어 확인
 node bench/bench.mjs --scenario step2-dup-idempotent --concurrency 20 --requests 50
 ```
 
-### ?�� [2?�계 직접 ?�보�?미션]
-- DB???�속?�서 `processed_message` ?�이블에 ?�제�??�들???�여 ?�는지 직접 조회??보세??
+### 🧪 [2단계 직접 해보기 미션]
+- DB에 접속해서 `processed_message` 테이블에 실제로 키들이 쌓여 있는지 직접 조회해 보세요:
   ```powershell
   docker exec lab-postgres psql -U postgres -d distributed_lab -c "SELECT * FROM processed_message LIMIT 10;"
   ```
 
 ---
 
-## 3?�계: 분산 ?�경?�서???�이???�합??(Dual-Write vs Outbox)
+## 3단계: 분산 환경에서의 데이터 정합성 (Dual-Write vs Outbox)
 
-> **PURPOSE.md???�심 질문**:  
-> *"DB??커밋?�는??Kafka 발행???�패?�면 ?�떻�??�는가(?�중 ?�기 문제)? ?��? Transactional Outbox ?�턴?�로 ?�떻�??�결?�는가?"*
+> **PURPOSE.md의 핵심 질문**:  
+> *"DB는 커밋됐는데 Kafka 발행이 실패하면 어떻게 되는가(이중 쓰기 문제)? 이를 Transactional Outbox 패턴으로 어떻게 해결하는가?"*
 
-### ??코드 리딩 ?�인?? `lab.step3_outbox` ?�키지
+### ① 코드 리딩 포인트: `lab.step3_outbox` 패키지
 
-1. **???�순??`DB ?�????Kafka ?�송`???�면 ???�는가? (Dual-Write 문제)**
-   - [`Step3OrderService.createDualWriteOrder()`](server/src/main/java/lab/step3_outbox/Step3OrderService.java#L48-L62)�?보세??
-   - 50번째 줄에??`saveOrderRecord()`�?**DB?�는 주문???��? ?�??커밋)**?�었?�니??
-   - 그런??53번째 줄에??Kafka�?메시지�?보내?�다가 20% ?�률�??�러(`RuntimeException`)가 ?�니??
-   - 결과: **DB?�는 주문??100�??�는?? Kafka 컨슈머는 80개밖??�?받습?�다.** ?�머지 20�?주문?� ?�원??배송/결제 처리가 ???�는 **?�령 주문(?�이???�실)**???�니??
+1. **왜 단순히 `DB 저장 후 Kafka 전송`을 하면 안 되는가? (Dual-Write 문제)**
+   - [Step3OrderService.java](server/src/main/java/lab/step3_outbox/Step3OrderService.java)의 `createDualWriteOrder()`를 보세요.
+   - `saveOrderRecord()`로 **DB에는 주문이 이미 저장(커밋)**되었습니다.
+   - 그런데 Kafka로 메시지를 보내려다가 20% 확률로 에러(`RuntimeException`)가 납니다.
+   - 결과: **DB에는 주문이 100개 있는데, Kafka 컨슈머는 80개밖에 못 받습니다.** 나머지 20개 주문은 영원히 배송/결제 처리가 안 되는 **유령 주문(데이터 유실)**이 됩니다!
 
-2. **?�결�? Transactional Outbox ?�턴 (2?�계�??�눠??보내�?**
-   - **1?�계 (?�자??로컬 ?�??**: [`Step3OrderService.createOutboxOrder()`](server/src/main/java/lab/step3_outbox/Step3OrderService.java#L69-L97)
-     - 메서???�체가 ?�나??`@Transactional`�?묶여 ?�습?�다.
-     - Kafka�?직접 ?�출?�는 ?�?? **같�? PostgreSQL DB ?�에 ?�는 `outbox_event` ?�이블에 보낼 메시지(`status = "INIT"`)�?주문(`orders`)�??�께 INSERT** ?�니??
-     - 같�? DB ?�의 ?�랜??��?��?�?**?????�공?�거??????롤백(100% ?�자??**?�니??
-   - **2?�계 (백그?�운??릴레??& ?�시??**: [`Step3OutboxRelayScheduler.relayOutboxEvents()`](server/src/main/java/lab/step3_outbox/Step3OutboxRelayScheduler.java#L31-L64)
-     - 0.5초마???�아가???��?줄러가 `outbox_event` ?�이블에??`INIT` ?�태???�들???�어 Kafka�?발송?�니??
-     - 47번째 줄에???�같??20% ?�률�?Kafka ?�애가 ?�더?�도, **`continue`�??�어가??DB ?�태가 ?�전??`INIT`?�로 ?�아?�기 ?�문??0.5�??�에 ?�시 ?�도(Retry)**?�니?? 결국 100% ?�송??보장?�니??
+2. **해결책: Transactional Outbox 패턴 (2단계로 나눠서 보내기)**
+   - **1단계 (원자적 로컬 저장)**: [Step3OrderService.java](server/src/main/java/lab/step3_outbox/Step3OrderService.java)의 `createOutboxOrder()`
+     - 메서드 전체가 하나의 `@Transactional`로 묶여 있습니다.
+     - Kafka를 직접 호출하는 대신, **같은 PostgreSQL DB 안에 있는 `outbox_event` 테이블에 보낼 메시지(`status = "INIT"`)를 주문(`orders`)과 함께 INSERT** 합니다.
+     - 같은 DB 안의 트랜잭션이므로 **둘 다 성공하거나 둘 다 롤백(100% 원자성)**됩니다.
+   - **2단계 (백그라운드 릴레이 & 재시도)**: [Step3OutboxRelayScheduler.java](server/src/main/java/lab/step3_outbox/Step3OutboxRelayScheduler.java)
+     - 0.5초마다 돌아가는 스케줄러가 `outbox_event` 테이블에서 `INIT` 상태인 행들을 읽어 Kafka로 발송합니다.
+     - 20% 확률로 Kafka 장애가 나더라도, **상태가 여전히 `INIT`으로 남아있기 때문에 0.5초 뒤에 다시 시도(Retry)**합니다. 결국 100% 전송이 보장됩니다!
 
-### ???�행?�서 ?�으�??�인?�기
+### ② 실행해서 눈으로 확인하기
 ```powershell
-# 1. Dual-Write ?�행 ???�합??깨짐(isConsistent: False) ?�인
+# 1. Dual-Write 실행 후 정합성 깨짐(isConsistent: False) 확인
 node bench/bench.mjs --scenario step3-dual-write --concurrency 20 --requests 100
 Invoke-RestMethod -Uri "http://localhost:8080/api/v3/orders/verify"
 
-# 2. Outbox ?�턴 ?�행 ??2�???100% ?�치(isConsistent: True) ?�인
+# 2. Outbox 패턴 실행 후 2초 뒤 100% 일치(isConsistent: True) 확인
 node bench/bench.mjs --scenario step3-outbox --concurrency 20 --requests 100
 Start-Sleep -Seconds 2
 Invoke-RestMethod -Uri "http://localhost:8080/api/v3/orders/verify"
 ```
 
-### ?�� [3?�계 직접 ?�보�?미션]
-- Outbox ?�스?��? ?�행??직후 `Start-Sleep` ?�이 `Invoke-RestMethod -Uri "http://localhost:8080/api/v3/orders/verify"`�??��???보세??  
-  `outboxInitCount`가 `100 -> 25 -> 5 -> 0`?�로 줄어?�면??`consumerReceivedCount`가 `100`?�로 ?�렴?�는 **최종 ?��???Eventual Consistency)** 과정???�시간으�?�????�습?�다.
+### 🧪 [3단계 직접 해보기 미션]
+- Outbox 테스트를 실행한 직후 `Start-Sleep` 없이 `Invoke-RestMethod -Uri "http://localhost:8080/api/v3/orders/verify"`를 연타해 보세요!  
+  `outboxInitCount`가 `100 -> 25 -> 5 -> 0`으로 줄어들면서 `consumerReceivedCount`가 `100`으로 수렴하는 **최종 일관성(Eventual Consistency)** 과정을 실시간으로 볼 수 있습니다.
 
 ---
 
-## 4?�계: 종합 ?�습 ???�착??주문 버퍼�?& Saga 보상 ?�랜??��
+## 4단계: 종합 실습 — 선착순 주문 버퍼링 & Saga 보상 트랜잭션
 
-> **PURPOSE.md???�심 질문**:  
-> *"초당 1,000�??�상????��?�는 ?�청???�떻�?버퍼링하�? 분산 ?�경?�서 결제가 ?�패?�을 ???��? 차감???�고�??�떻�???��??롤백(Saga 보상 ?�랜??��)?�는가?"*
+> **PURPOSE.md의 핵심 질문**:  
+> *"초당 1,000건 이상의 폭주하는 요청을 어떻게 버퍼링하고, 분산 환경에서 결제가 실패했을 때 이미 차감한 재고를 어떻게 역방향 롤백(Saga 보상 트랜잭션)하는가?"*
 
-### ??코드 리딩 ?�인?? `lab.step4_saga` ?�키지 (4개의 ?�래?�만 ?�서?��??�라가 보세??
+### ① 코드 리딩 포인트: `lab.step4_saga` 패키지 (4개의 클래스만 순서대로 따라가 보세요)
 
-1. **방파??(API ?�수�?**: [`Step4OrderController.flashOrder()`](server/src/main/java/lab/step4_saga/Step4OrderController.java#L27-L52)
-   - ??컨트롤러?�는 Repository(DB) ?�출???�예 ?�습?�다!
-   - ?�청???�면 Kafka(`flash-order-requests`)???��?기만 ?�고 ?�납?�다. 그래??HikariCP 커넥???�????10개뿐?�데??**??1,000 TPS, ?��??�레??0�?*�?모든 ?�청???�겨?��? ?�고 받아?�니??
+1. **방파제 (API 접수처)**: [Step4OrderController.java](server/src/main/java/lab/step4_saga/Step4OrderController.java)의 `flashOrder()`
+   - 이 컨트롤러에는 Repository(DB) 호출이 아예 없습니다!
+   - 요청이 오면 Kafka(`flash-order-requests`)에 던지기만 하고 끝납니다. 그래서 HikariCP 커넥션 풀이 단 10개뿐인데도 **약 1,000 TPS, 대기 스레드 0개**로 모든 요청을 튕겨내지 않고 받아냅니다.
 
-2. **�?번째 ?�커 (?�고 차감)**: [`Step4StockWorker.processOrderRequest()`](server/src/main/java/lab/step4_saga/Step4StockWorker.java#L31-L86)
-   - ?�에???�청???�나??꺼내 ?�고�?`-1` 차감?�고, 주문??`PENDING`?�로 만든 ?? Outbox??`"ORDER_CREATED"` ?�벤?��? ?�?�합?�다.
+2. **첫 번째 워커 (재고 차감)**: [Step4StockWorker.java](server/src/main/java/lab/step4_saga/Step4StockWorker.java)
+   - 큐에서 요청을 하나씩 꺼내 재고를 `-1` 차감하고, 주문을 `PENDING`으로 만든 뒤, Outbox에 `"ORDER_CREATED"` 이벤트를 저장합니다.
 
-3. **??번째 ?�커 (결제 ?�도 & ?�패 ??보상 ?�벤??발행)**: [`Step4PaymentWorker.processPayment()`](server/src/main/java/lab/step4_saga/Step4PaymentWorker.java#L32-L58)
-   - 44번째 줄에??**30% ?�률(`Math.random() < 0.3`)�?결제 ?�패**가 ?�어?�니??
-   - ?��? `Step4StockWorker`?�서 ?�고 차감 ?�랜??��?� 커밋?�어 ?�난 ?�태?�니?? 과거???�일 DB처럼 `rollback` 명령?�로 ?�돌�??��? ?�습?�다.
-   - 그래??49번째 �?[`recordCompensationOutboxEvent()`](server/src/main/java/lab/step4_saga/Step4PaymentWorker.java#L76-L102)�??�출??**"결제가 ?�패?�으???�선 ?�고 차감??취소?�라!"?�는 `"PAYMENT_FAILED"` 보상 ?�벤??*�?발행?�니??
+3. **두 번째 워커 (결제 시도 & 실패 시 보상 이벤트 발행)**: [Step4PaymentWorker.java](server/src/main/java/lab/step4_saga/Step4PaymentWorker.java)
+   - **30% 확률(`Math.random() < 0.3`)로 결제 실패**가 일어납니다.
+   - 이미 `Step4StockWorker`에서 재고 차감 트랜잭션은 커밋되어 끝난 상태입니다! 과거의 단일 DB처럼 `rollback` 명령어로 되돌릴 수가 없습니다.
+   - 그래서 `recordCompensationOutboxEvent()`를 호출해 **"결제가 실패했으니 앞선 재고 차감을 취소해라!"라는 `"PAYMENT_FAILED"` 보상 이벤트**를 발행합니다.
 
-4. **??번째 ?�커 (보상 ?�랜??�� / ??��??롤백)**: [`Step4CompensationWorker.processCompensation()`](server/src/main/java/lab/step4_saga/Step4CompensationWorker.java#L29-L65)
-   - `"PAYMENT_FAILED"` ?�벤?��? 받아??**46번째 줄에???�고�??�시 `+1` ?�복(`product.getStock() + qty`)**?�키�? **51번째 줄에??주문 ?�태�?`"CANCELLED"`�?바꿉?�다.**
+4. **세 번째 워커 (보상 트랜잭션 / 역방향 롤백)**: [Step4CompensationWorker.java](server/src/main/java/lab/step4_saga/Step4CompensationWorker.java)
+   - `"PAYMENT_FAILED"` 이벤트를 받아서 **재고를 다시 `+1` 원복(`product.getStock() + qty`)**시키고, **주문 상태를 `"CANCELLED"`로 바꿉니다.**
 
-### ???�행?�서 ?�으�??�인?�기
+### ② 실행해서 눈으로 확인하기
 ```powershell
-# 100�??�착??주문 ??�� ?��?
+# 100건 선착순 주문 폭주 인가
 node bench/bench.mjs --scenario step4-saga --concurrency 30 --requests 100
 
-# 3�??��???최종 ?�합???�고 차감 ??== PAID 주문 ?? 검�?Start-Sleep -Seconds 3
+# 3초 대기 후 최종 정합성(재고 차감 수 == PAID 주문 수) 검증
+Start-Sleep -Seconds 3
 Invoke-RestMethod -Uri "http://localhost:8080/api/v4/verify-saga"
 ```
 
-### ?�� [4?�계 직접 ?�보�?미션 (강력 추천!)]
-1. [`Step4CompensationWorker.java`](server/src/main/java/lab/step4_saga/Step4CompensationWorker.java#L46)??46번째 �?`product.setStock(product.getStock() + qty);`)??**주석 처리(`//`)** ?�보?�요 (보상 ?�랜??��??고장 ???�황).
-2. ?�버�??�시?�하�???명령?��? ?�시 ?�행????`/api/v4/verify-saga` 결과�??�인??보세??
-   - 결제??70건만 ?�공(`paidOrdersCount: 70`)?�는???�고??100개�? ??빠져버려??`deductedStock: 100`), **`isStockAndPaidConsistent: False` (?�합???�괴!)**가 ?�는 것을 직접 ?�으�??�인?????�습?�다!
+### 🧪 [4단계 직접 해보기 미션 (강력 추천!)]
+1. [Step4CompensationWorker.java](server/src/main/java/lab/step4_saga/Step4CompensationWorker.java)의 재고 복구 코드(`product.setStock(product.getStock() + qty);`)를 **주석 처리(`//`)** 해보세요 (보상 트랜잭션이 고장 난 상황).
+2. 서버를 재시작하고 위 명령어를 다시 실행한 뒤 `/api/v4/verify-saga` 결과를 확인해 보세요.
+   - 결제는 70건만 성공(`paidOrdersCount: 70`)했는데 재고는 100개가 다 빠져버려서(`deductedStock: 100`), **`isStockAndPaidConsistent: False` (정합성 파괴!)**가 뜨는 것을 직접 눈으로 확인할 수 있습니다!
 
 ---
 
-## 5. ?�눈??보는 코드 지??(Quick Navigation)
+## 5. 한눈에 보는 코드 지도 (Quick Navigation)
 
-| ?�계 | ?�습 주제 | ?�심 ?�일 (?�릭 ???�동) | 벤치마크 ?�행 명령??|
+| 단계 | 학습 주제 | 핵심 파일 | 벤치마크 실행 명령어 |
 | :---: | :--- | :--- | :--- |
-| **공통** | DB 커넥???� ?�한 (Max 10) | [application.yml](server/src/main/resources/application.yml#L10-L14) | - |
-| **공통** | 부???�성 & 메트�??�링 | [bench.mjs](bench/bench.mjs) | `node bench/bench.mjs --help` |
-| **1?�계** | 비�?????/ ?� 고갈 / ?�드??| [Step1OrderService.java](server/src/main/java/lab/step1_rdbms/Step1OrderService.java) | `node bench/bench.mjs --scenario step1-delay` |
-| **2?�계** | Kafka 비동�?분리 & 멱등??| [Step2OrderConsumer.java](server/src/main/java/lab/step2_async/Step2OrderConsumer.java) | `node bench/bench.mjs --scenario step2-async` |
-| **3?�계** | Dual-Write vs Outbox ?�턴 | [Step3OrderService.java](server/src/main/java/lab/step3_outbox/Step3OrderService.java)<br>[Step3OutboxRelayScheduler.java](server/src/main/java/lab/step3_outbox/Step3OutboxRelayScheduler.java) | `node bench/bench.mjs --scenario step3-outbox` |
-| **4?�계** | ?�착??버퍼�?& Saga 보상 | [Step4OrderController.java](server/src/main/java/lab/step4_saga/Step4OrderController.java)<br>[Step4StockWorker.java](server/src/main/java/lab/step4_saga/Step4StockWorker.java)<br>[Step4PaymentWorker.java](server/src/main/java/lab/step4_saga/Step4PaymentWorker.java)<br>[Step4CompensationWorker.java](server/src/main/java/lab/step4_saga/Step4CompensationWorker.java) | `node bench/bench.mjs --scenario step4-saga` |
+| **공통** | DB 커넥션 풀 제한 (Max 10) | [server/src/main/resources/application.yml](server/src/main/resources/application.yml) | - |
+| **공통** | 부하 생성 & 메트릭 폴링 | [bench/bench.mjs](bench/bench.mjs) | `node bench/bench.mjs --help` |
+| **1단계** | 비관적 락 / 풀 고갈 / 데드락 | [Step1OrderService.java](server/src/main/java/lab/step1_rdbms/Step1OrderService.java) | `node bench/bench.mjs --scenario step1-delay` |
+| **2단계** | Kafka 비동기 분리 & 멱등성 | [Step2OrderConsumer.java](server/src/main/java/lab/step2_async/Step2OrderConsumer.java) | `node bench/bench.mjs --scenario step2-async` |
+| **3단계** | Dual-Write vs Outbox 패턴 | [Step3OrderService.java](server/src/main/java/lab/step3_outbox/Step3OrderService.java)<br>[Step3OutboxRelayScheduler.java](server/src/main/java/lab/step3_outbox/Step3OutboxRelayScheduler.java) | `node bench/bench.mjs --scenario step3-outbox` |
+| **4단계** | 선착순 버퍼링 & Saga 보상 | [Step4OrderController.java](server/src/main/java/lab/step4_saga/Step4OrderController.java)<br>[Step4StockWorker.java](server/src/main/java/lab/step4_saga/Step4StockWorker.java)<br>[Step4PaymentWorker.java](server/src/main/java/lab/step4_saga/Step4PaymentWorker.java)<br>[Step4CompensationWorker.java](server/src/main/java/lab/step4_saga/Step4CompensationWorker.java) | `node bench/bench.mjs --scenario step4-saga` |
