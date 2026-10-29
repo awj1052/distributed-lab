@@ -1,0 +1,9 @@
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+*.log
+.idea/
+*.iml
+.vscode/
+bin/
